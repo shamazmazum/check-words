@@ -16,5 +16,5 @@ translation and ask you for a corresponding word for each pair. Pairs which form
 a group (enclosured in braces) are not suffled and printed in that order in
 which they appear in the dictionary.
 
-You can also make a standalone colsole application running `make` from this
+You can also make a standalone console application running `make` from this
 directory. Currently, this works only with sbcl.
