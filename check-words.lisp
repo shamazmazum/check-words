@@ -64,10 +64,11 @@
   (dolist (pair group)
     (format *io-stream* "~a? " (funcall *get-key-val* pair :key))
     (force-output *io-stream*)
-    (format *io-stream*
-            (let ((answer (read-line *io-stream*)))
-              (if (string= answer (funcall *get-key-val* pair :value))
-                  "Correct!~%" "Wrong!~%")))))
+    (apply #'format *io-stream*
+           (let ((answer (read-line *io-stream*))
+                 (correct-answer (funcall *get-key-val* pair :value)))
+             (if (string= answer correct-answer)
+                 '("Correct!~%") `("Wrong! Correct answer: ~a ~%" ,correct-answer))))))
 
 (defun check-dictionary (filename &key (stream *io-stream*) (key-order :key-last))
   "Question user using a dictionary. STREAM is a used I/O stream and KEY-ORDER may be
