@@ -1,4 +1,4 @@
-(in-package :words-translation)
+(in-package :check-words)
 
 (defparameter *standard-io* (make-two-way-stream *standard-input* *standard-output*))
 (defvar *io-stream* *standard-io*
@@ -21,27 +21,38 @@
 (defvar *get-key-val* #'key-last
   "Current key/value order")
 
-(defun permute (list)
-  (factoradic-permutation list (random (factorial (length list)))))
+(defun permute (list &optional res)
+  (if (null list) res
+      (let* ((idx (random (length list)))
+             (item (nth idx list)))
+        (permute (remove item list) (cons item res)))))
 
-(defrule separator (+ (or #\Space #\Tab)))
-(defrule maybe-separator (* (or #\Space #\Tab)))
+(defun allowed (char)
+  (not (member char '(#\{ #\} #\; #\= #\#) :test #'char=)))
+
 (defrule translation-separator (+ #\=))
-(defrule word (+ (alphanumericp character))
-  (:function text))
+(defrule word (+ (allowed character))
+  (:lambda (list)
+    (string-trim '(#\Space #\Tab) (text list))))
+(defrule group-separator #\;)
+(defrule group-begin #\{)
+(defrule group-end #\})
 
-(defrule single-word (and word maybe-separator translation-separator maybe-separator word)
+(defrule single-word (and word translation-separator word)
   (:lambda (list)
     (list
      (cons (first list)
-           (fifth list)))))
+           (third list)))))
 
-(defrule many-words (and #\{ maybe-separator
-                         (+ (and single-word maybe-separator #\; maybe-separator))
-                         maybe-separator #\})
-  (:destructure (brk1 sep1 list sep2 brk2)
-                (declare (ignore brk1 sep1 brk2 sep2))
-                (mapcar #'caar list)))
+(defrule many-words (and group-begin
+                         (* (and single-word group-separator))
+                         single-word
+                         group-end)
+  (:destructure (brk1 list last-pair brk2)
+                (declare (ignore brk1 brk2))
+                (append
+                 (mapcar #'caar list)
+                 last-pair)))
 
 (defrule comment (and #\# (* character))
   (:constant nil))

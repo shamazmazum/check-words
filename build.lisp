@@ -2,11 +2,10 @@
 (require 'sb-posix)
 (asdf:load-system :check-words)
 
+#-sbcl (error "Not implemented")
+
 (defun get-args ()
-  #+sbcl (cdr sb-ext:*posix-argv*)
-  #-sbcl (progn
-           (error "Not implemented")
-           (exit :code 1)))
+  (cdr sb-ext:*posix-argv*))
 
 (defun usage ()
   (format t "Usage: check-words <dictionary>~%")
@@ -16,10 +15,15 @@
   (let ((args (get-args)))
     (if (/= (length args) 1)
         (usage))
-    (words-translation:check-dictionary (car args)))
+    (handler-case
+        (let ((*random-state* (make-random-state t)))
+          (check-words:check-dictionary (car args)))
+      ((or sb-sys:interactive-interrupt end-of-file) ()
+        (format t "Quiting on user demand~%")
+        (exit :code 1))))
   (exit))
 
 (defun save-me ()
-  #+sbcl (sb-ext:save-lisp-and-die (sb-posix:getenv "CHECK_WORDS_NAME")
-                                   :executable t :toplevel #'toplevel))
+  (sb-ext:save-lisp-and-die (sb-posix:getenv "CHECK_WORDS_NAME")
+                            :executable t :toplevel #'toplevel))
 (save-me)
