@@ -44,24 +44,52 @@
      (cons (first list)
            (third list)))))
 
+(defrule annotation word) ; Just an alias
+
 (defrule many-words (and group-begin
+                         (? (and annotation group-separator))
                          (* (and single-word group-separator))
                          single-word
                          group-end)
-  (:destructure (brk1 list last-pair brk2)
+  (:destructure (brk1 annotation list last-pair brk2)
                 (declare (ignore brk1 brk2))
-                (append
-                 (mapcar #'caar list)
-                 last-pair)))
+                (let ((pairs
+                       (append
+                        (mapcar #'caar list)
+                        last-pair)))
+                  (if annotation (cons (car annotation) pairs) pairs))))
 
 (defrule comment (and #\# (* character))
   (:constant nil))
 
 (defrule main-rule (or single-word many-words comment))
 
+(defun read-groups (stream)
+  "Read word pairs from stream"
+  (loop
+     with groups = nil
+     for line = (read-line stream nil)
+     while line
+     do
+       (handler-case
+           (let ((group (parse 'main-rule line)))
+             (if group (push group groups)))
+         (esrap-parse-error ()
+           (format *error-output* "Cannot parse line: ~a~%" line)))
+     finally (return groups)))
+
+(defun maybe-print-annotation (group)
+  "Print a group annotation if any. Return the group without annotation"
+  (let ((annotation (car group)))
+  (cond
+    ((atom annotation)
+     (format *io-stream* "~a.~%" annotation)
+     (cdr group))
+    (t group))))
+
 (defun check-group (group)
   "Question user for pairs group"
-  (dolist (pair group)
+  (dolist (pair (maybe-print-annotation group))
     (format *io-stream* "~a? " (funcall *get-key-val* pair :key))
     (force-output *io-stream*)
     (apply #'format *io-stream*
@@ -75,17 +103,7 @@
 :KEY-LAST or :KEY-FIRST"
   (let ((groups
          (with-open-file (in filename)
-           (loop
-              with groups = nil
-              for line = (read-line in nil)
-              while line
-              do
-                (handler-case
-                    (let ((group (parse 'main-rule line)))
-                      (if group (push group groups)))
-                  (esrap-parse-error ()
-                    (format *error-output* "Cannot parse line: ~a~%" line)))
-              finally (return groups)))))
+           (read-groups in))))
     (let ((*io-stream* stream)
           (*get-key-val*
            (case key-order
