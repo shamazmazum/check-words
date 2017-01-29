@@ -24,6 +24,6 @@
   (exit))
 
 (defun save-me ()
-  (sb-ext:save-lisp-and-die (sb-posix:getenv "CHECK_WORDS_NAME")
+  (sb-ext:save-lisp-and-die "check-words"
                             :executable t :toplevel #'toplevel))
 (save-me)

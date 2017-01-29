@@ -1,9 +1,7 @@
-BUILD_CMD ?= sbcl --load
-TARGET = check-words
-
-$(TARGET): check-words.asd check-words.lisp package.lisp build.lisp
-	env CHECK_WORDS_NAME=$(.TARGET) $(BUILD_CMD) build.lisp
+build-sources:
+	$(MAKE) -C src
 
 clean:
-	rm $(TARGET)
-.PHONY: clean
+	$(MAKE) -C src $(.TARGET)
+
+.PHONY: build-sources clean

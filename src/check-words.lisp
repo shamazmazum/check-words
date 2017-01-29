@@ -4,22 +4,8 @@
 (defvar *io-stream* *standard-io*
   "check-words I/O stream")
 
-(defun key-first (cons which)
-  "Key-first key/value order"
-  (declare (type (member :key :value) which))
-  (case which
-    (:key (car cons))
-    (t (cdr cons))))
-
-(defun key-last (cons which)
-  "Key last key/value order"
-  (declare (type (member :key :value) which))
-  (case which
-    (:key (cdr cons))
-    (t (car cons))))
-
-(defvar *get-key-val* #'key-last
-  "Current key/value order")
+(defvar *key-order* :last
+  "Controls the key order in pair. May be :LAST or :FIRST")
 
 (defun permute (list &optional res)
   (if (null list) res
@@ -89,25 +75,30 @@
 
 (defun check-group (group)
   "Question user for pairs group"
-  (dolist (pair (maybe-print-annotation group))
-    (format *io-stream* "~a? " (funcall *get-key-val* pair :key))
-    (force-output *io-stream*)
-    (apply #'format *io-stream*
-           (let ((answer (read-line *io-stream*))
-                 (correct-answer (funcall *get-key-val* pair :value)))
-             (if (string= answer correct-answer)
-                 '("Correct!~%") `("Wrong! Correct answer: ~a ~%" ,correct-answer))))))
+  (declare (type (member :first :last) *key-order*))
+  (flet ((check-pair (pair)
+           (let ((get-key   (if (eq :first *key-order*) #'car #'cdr))
+                 (get-value (if (eq :first *key-order*) #'cdr #'car)))
+             (format *io-stream* "~a? " (funcall get-key pair))
+             (force-output *io-stream*)
+             (let ((answer (read-line *io-stream*))
+                   (correct-answer (funcall get-value pair)))
+               (cond
+                 ((string= answer correct-answer)
+                  (format *io-stream* "Correct!~%")
+                  t)
+                 (t
+                  (format *io-stream* "Wrong! Correct answer: ~a~%" correct-answer)
+                  nil))))))
+    (mapcar #'check-pair (maybe-print-annotation group))))
 
-(defun check-dictionary (filename &key (stream *io-stream*) (key-order :key-last))
+(defun check-dictionary (filename &key (stream *io-stream*) (key-order *key-order*))
   "Question user using a dictionary. STREAM is a used I/O stream and KEY-ORDER may be
-:KEY-LAST or :KEY-FIRST"
+:LAST or :FIRST"
   (let ((groups
          (with-open-file (in filename)
            (read-groups in))))
     (let ((*io-stream* stream)
-          (*get-key-val*
-           (case key-order
-             (:key-last #'key-last)
-             (t #'key-first))))
+          (*key-order* key-order))
       (mapc #'check-group (permute groups))))
   t)
