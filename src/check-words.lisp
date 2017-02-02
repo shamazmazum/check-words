@@ -7,11 +7,14 @@
 (defvar *key-order* :last
   "Controls the key order in pair. May be :LAST or :FIRST")
 
-(defun permute (list &optional res)
-  (if (null list) res
-      (let* ((idx (random (length list)))
-             (item (nth idx list)))
-        (permute (remove item list) (cons item res)))))
+(defun permute-groups (list)
+  "Permute groups list"
+  (labels ((do-permute (list res)
+             (if (null list) res
+                 (let* ((idx (random (length list)))
+                        (item (nth idx list)))
+                   (do-permute (remove item list) (cons item res))))))
+    (do-permute list nil)))
 
 (defun allowed (char)
   (not (member char '(#\{ #\} #\; #\= #\#) :test #'char=)))
@@ -100,5 +103,5 @@
            (read-groups in))))
     (let ((*io-stream* stream)
           (*key-order* key-order))
-      (mapc #'check-group (permute groups))))
+      (mapc #'check-group (permute-groups groups))))
   t)
