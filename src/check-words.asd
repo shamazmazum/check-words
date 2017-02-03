@@ -9,4 +9,4 @@
                     (asdf:load-system :check-words-test)
                     (funcall
                      (intern "RUN-TESTS" (find-package "CHECK-WORDS-TEST"))))
-  :depends-on (:esrap))
+  :depends-on (:esrap :bordeaux-threads))

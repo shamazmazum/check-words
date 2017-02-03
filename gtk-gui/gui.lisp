@@ -20,7 +20,9 @@
                   :initform (error "Specify output buffer")
                   :reader stream-output-buffer)
    (input-string  :initform ""
-                  :accessor stream-input-string)))
+                  :accessor stream-input-string)
+   (eof-pending   :initform nil
+                  :accessor stream-eof-pending)))
 
 (defmacro thread-safely (&body body)
   `(progn
@@ -29,21 +31,20 @@
        (gdk:gdk-threads-leave))))
 
 (defun start-checker (filename output-buffer)
-  (let ((stream (make-instance 'checker-stream :output-buffer output-buffer))
-        (groups
-         (with-open-file (in filename)
-           (permute-groups (read-groups in)))))
+  (let ((stream (make-instance 'checker-stream :output-buffer output-buffer)))
     (make-instance 'checker
                    :stream stream
-                   :thread
-                   (make-thread (lambda ()
-                                  (let ((*io-stream* stream))
-                                    (mapc #'check-group groups)))
-                                :name "Checker thread"))))
+                   :thread (check-dictionary filename
+                                             :stream stream
+                                             :threaded t))))
 
 (defun set-checker (checker)
-  (if (and *checker* (thread-alive-p (checker-thread *checker*)))
-      (destroy-thread (checker-thread *checker*)))
+  (if *checker*
+      (let ((thread (checker-thread *checker*))
+            (stream (checker-stream *checker*)))
+        (when (thread-alive-p thread)
+          (send-eof stream)
+          (join-thread thread))))
   (setq *checker* checker))
 
 (defmethod stream-write-char ((stream checker-stream) char)
@@ -66,18 +67,23 @@
 
 (defmethod stream-read-line ((stream checker-stream))
   (with-lock-held ((stream-lock stream))
-    (with-accessors ((input-string stream-input-string)) stream
-      (loop while (= (length input-string) 0) do
-           (condition-wait (stream-condvar stream)
-                           (stream-lock stream)))
-      (prog1
-          input-string
-        (setf input-string "")))))
+    (condition-wait (stream-condvar stream)
+                    (stream-lock stream))
+    (if (stream-eof-pending stream)
+        (error 'end-of-file :stream stream))
+    (stream-input-string stream)))
 
 (defgeneric set-input-string (stream string))
+(defgeneric send-eof (stream))
+
 (defmethod set-input-string ((stream checker-stream) string)
   (with-lock-held ((stream-lock stream))
     (setf (stream-input-string stream) string)
+    (condition-notify (stream-condvar stream))))
+
+(defmethod send-eof ((stream checker-stream))
+  (with-lock-held ((stream-lock stream))
+    (setf (stream-eof-pending stream) t)
     (condition-notify (stream-condvar stream))))
 
 (defun choose-dictionary ()

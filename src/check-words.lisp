@@ -95,13 +95,19 @@
                   nil))))))
     (mapcar #'check-pair (maybe-print-annotation group))))
 
-(defun check-dictionary (filename &key (stream *io-stream*) (key-order *key-order*))
+(defun check-dictionary (filename &key (stream *io-stream*) (key-order *key-order*) threaded)
   "Question user using a dictionary. STREAM is a used I/O stream and KEY-ORDER may be
-:LAST or :FIRST"
+:LAST or :FIRST. THREADED can be used to run checker in a separate thread (may be useful for GUI)"
   (let ((groups
          (with-open-file (in filename)
            (read-groups in))))
-    (let ((*io-stream* stream)
-          (*key-order* key-order))
-      (mapc #'check-group (permute-groups groups))))
-  t)
+    (flet ((run% ()
+             (let ((*io-stream* stream)
+                   (*key-order* key-order))
+               (loop for group in (permute-groups groups) do
+                    (handler-case (check-group group)
+                      (end-of-file () (loop-finish)))
+                    finally (return nil)))))
+      (if threaded
+          (bordeaux-threads:make-thread #'run% :name "Checker thread")
+          (run%)))))
