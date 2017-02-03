@@ -103,10 +103,11 @@
                                  :title "Check words"
                                  :default-width 250
                                  :default-height 70))
-          (button1 (make-instance 'gtk-file-chooser-button
-                                  :label "Choose dictionary"
-                                  :action :open))
-          (button2 (make-instance 'gtk-button :label "Next"))
+          (button-choose (make-instance 'gtk-file-chooser-button
+                                        :label "Choose dictionary"
+                                        :action :open))
+          (button-next (make-instance 'gtk-button :label "Next"))
+          (button-clear (make-instance 'gtk-button :label "Clear log"))
           (label (make-instance 'gtk-label :label "Press Start to choose dictionary"))
           (answer-entry (make-instance 'gtk-entry))
           (log-area (make-instance 'gtk-text-view :editable nil))
@@ -118,13 +119,13 @@
                                   (declare (ignore widget))
                                   (set-checker nil)
                                   (leave-gtk-main)))
-      (gobject:g-signal-connect button1 "file-set"
+      (gobject:g-signal-connect button-choose "file-set"
                                 (lambda (widget)
                                   (let ((filename (gtk-file-chooser-get-filename widget)))
                                     (when filename
                                       (set-checker (start-checker filename
                                                                   (gtk-text-view-buffer log-area)))))))
-      (gobject:g-signal-connect button2 "clicked"
+      (gobject:g-signal-connect button-next "clicked"
                                 (lambda (widget)
                                   (declare (ignore widget))
                                   (set-input-string (checker-stream *checker*)
@@ -132,11 +133,26 @@
                                                      (gtk-entry-buffer answer-entry)))
                                   (gtk-window-set-focus window answer-entry)))
 
+      (gobject:g-signal-connect button-clear "clicked"
+                                (lambda (widget)
+                                  (declare (ignore widget))
+                                  (gtk-text-buffer-set-text
+                                   (gtk-text-view-buffer log-area) "")))
+
+      (gobject:g-signal-connect scrolled-window "size-allocate"
+                                (lambda (widget rectangle)
+                                  (declare (ignore rectangle))
+                                  (let ((adjustment (gtk-scrolled-window-vadjustment widget)))
+                                    (setf (gtk-adjustment-value adjustment)
+                                          (- (gtk-adjustment-upper adjustment)
+                                             (gtk-adjustment-page-size adjustment))))))
+
       (gtk-container-add scrolled-window log-area)
-      (gtk-box-pack-start box button1 :expand nil :padding 2)
+      (gtk-box-pack-start box button-choose :expand nil :padding 2)
       (gtk-box-pack-start box label :expand nil :padding 2)
       (gtk-box-pack-start box answer-entry :expand nil :padding 2)
-      (gtk-box-pack-start box button2 :expand nil :padding 2)
+      (gtk-box-pack-start box button-next :expand nil)
+      (gtk-box-pack-start box button-clear :expand nil :padding 2)
       (gtk-box-pack-start box scrolled-window)
 
       (gtk-container-add window box)
