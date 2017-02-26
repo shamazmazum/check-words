@@ -7,8 +7,27 @@
 (defvar *key-order* :last
   "Controls the key order in pair. May be :LAST or :FIRST")
 
-(defun permute-groups (list)
-  "Permute groups list"
+(define-condition check-words-parse-error (error)
+  ())
+(define-condition check-words-brace-balance (check-words-parse-error)
+  ())
+
+(let ((brace-count 0))
+  (defun translate-brace (brace)
+    (cond
+      ((string= brace "{")
+       (if (> brace-count 0)
+           (error 'check-words-brace-balance))
+       (incf brace-count)
+       :group-start)
+      ((string= brace "}")
+       (if (< brace-count 1)
+           (error 'check-words-brace-balance))
+       (decf brace-count)
+       :group-end))))
+
+(defun permute-translations (list)
+  "Permute a list"
   (labels ((do-permute (list res)
              (if (null list) res
                  (let* ((idx (random (length list)))
@@ -23,38 +42,91 @@
 (defrule word (+ (allowed character))
   (:lambda (list)
     (string-trim '(#\Space #\Tab) (text list))))
-(defrule group-separator #\;)
-(defrule group-begin #\{)
-(defrule group-end #\})
+(defrule pair-separator #\;)
 
-(defrule single-word (and word translation-separator word)
-  (:lambda (list)
-    (list
-     (cons (first list)
-           (third list)))))
-
-(defrule annotation word) ; Just an alias
-
-(defrule many-words (and group-begin
-                         (? (and annotation group-separator))
-                         (* (and single-word group-separator))
-                         single-word
-                         group-end)
-  (:destructure (brk1 annotation list last-pair brk2)
-                (declare (ignore brk1 brk2))
-                (let ((pairs
-                       (append
-                        (mapcar #'caar list)
-                        last-pair)))
-                  (if annotation (cons (car annotation) pairs) pairs))))
+(defrule group-begin #\{
+    (:function translate-brace))
+(defrule group-end #\}
+  (:function translate-brace))
 
 (defrule comment (and #\# (* character))
   (:constant nil))
 
-(defrule main-rule (or single-word many-words comment))
+(defrule single-pair (and word translation-separator word)
+  (:lambda (list)
+    (cons (first list)
+          (third list))))
 
-(defun read-groups (stream)
-  "Read word pairs from stream"
+(defrule annotation (and word pair-separator)
+  (:function first))
+
+(defrule translation-pairs (and single-pair (* (and pair-separator single-pair)))
+  (:destructure (first-pair rest-pairs)
+                (cons first-pair
+                      (mapcar #'second rest-pairs))))
+
+(defrule main-rule (or comment (and (? (and group-begin (? annotation)))
+                                    translation-pairs (? group-end)))
+  (:lambda (list)
+    (if list
+        (destructuring-bind (group-marker1 pairs group-marker2) list
+          (cons group-marker1 (cons group-marker2 pairs))))))
+
+(defclass translation () ())
+(defgeneric check-translation (translation)
+  (:documentation "Question user for translation"))
+
+(defclass single-translation (translation)
+  ((translation :initarg :translation
+                :accessor translation)))
+
+(defclass translation-group (translation)
+  ((annotation :initarg :annotation
+               :initform nil
+               :reader translation-annotation)
+   (translations :initarg :translations
+                 :initform nil
+                 :accessor translations)))
+
+(defmethod print-object ((translation translation-group) stream)
+  (let ((translations (translations translation)))
+    (pprint-logical-block (stream translations :prefix "#<translation-group " :suffix ">")
+      (format stream "~s: "(translation-annotation translation))
+      (pprint-newline :fill stream)
+      (loop for pair = (pprint-pop) while t do
+           (format stream "~s=~s; " (car pair) (cdr pair))
+           (pprint-newline :fill stream)
+           (pprint-exit-if-list-exhausted)))))
+
+(defmethod print-object ((translation single-translation) stream)
+  (let ((translation (translation translation)))
+    (format stream "#<single-translation ~s=~s>"
+            (car translation) (cdr translation))))
+
+(defun collect-groups (list)
+  "Stage2 parsing"
+  (let (current-group)
+    (flet ((do-collect (acc list)
+             (destructuring-bind (group-start group-end &rest pairs) list
+               (if group-start (setq current-group
+                                     (make-instance 'translation-group
+                                                    :annotation (second group-start))))
+               (if current-group
+                   (setf (translations current-group)
+                         (append (translations current-group) pairs)))
+               (cond
+                 (group-end
+                  (prog1 (cons current-group acc)
+                    (setq current-group nil)))
+                 (t
+                  (if current-group acc
+                      (append acc (mapcar (lambda (pair) (make-instance 'single-translation
+                                                                        :translation pair))
+                                          pairs))))))))
+      (reduce #'do-collect list :initial-value nil))))
+
+(defun read-dictionary (stream)
+  "Read word pairs from file"
   (loop
      with groups = nil
      for line = (read-line stream nil)
@@ -63,49 +135,45 @@
        (handler-case
            (let ((group (parse 'main-rule line)))
              (if group (push group groups)))
-         (esrap-parse-error ()
+         ((or esrap-parse-error check-words-parse-error) ()
            (format *error-output* "Cannot parse line: ~a~%" line)))
-     finally (return groups)))
+     finally (return (collect-groups (reverse groups)))))
 
-(defun maybe-print-annotation (group)
-  "Print a group annotation if any. Return the group without annotation"
-  (let ((annotation (car group)))
-  (cond
-    ((atom annotation)
-     (format *io-stream* "~a.~%" annotation)
-     (cdr group))
-    (t group))))
+(defun check-pair (pair)
+  (let ((get-key   (if (eq :first *key-order*) #'car #'cdr))
+        (get-value (if (eq :first *key-order*) #'cdr #'car)))
+    (format *io-stream* "~a? " (funcall get-key pair))
+    (force-output *io-stream*)
+    (let ((answer (read-line *io-stream*))
+          (correct-answer (funcall get-value pair)))
+      (cond
+        ((string= answer correct-answer)
+         (format *io-stream* "Correct!~%")
+         t)
+        (t
+         (format *io-stream* "Wrong! Correct answer: ~a~%" correct-answer)
+         nil)))))
 
-(defun check-group (group)
-  "Question user for pairs group"
-  (declare (type (member :first :last) *key-order*))
-  (flet ((check-pair (pair)
-           (let ((get-key   (if (eq :first *key-order*) #'car #'cdr))
-                 (get-value (if (eq :first *key-order*) #'cdr #'car)))
-             (format *io-stream* "~a? " (funcall get-key pair))
-             (force-output *io-stream*)
-             (let ((answer (read-line *io-stream*))
-                   (correct-answer (funcall get-value pair)))
-               (cond
-                 ((string= answer correct-answer)
-                  (format *io-stream* "Correct!~%")
-                  t)
-                 (t
-                  (format *io-stream* "Wrong! Correct answer: ~a~%" correct-answer)
-                  nil))))))
-    (mapcar #'check-pair (maybe-print-annotation group))))
+(defmethod check-translation ((translation single-translation))
+  (check-pair (translation translation)))
+
+(defmethod check-translation ((translation translation-group))
+  (let ((annotation (translation-annotation translation)))
+    (if annotation
+        (format *io-stream* "~a;~%" annotation)))
+  (mapcar #'check-pair (translations translation)))
 
 (defun check-dictionary (filename &key (stream *io-stream*) (key-order *key-order*) threaded)
   "Question user using a dictionary. STREAM is a used I/O stream and KEY-ORDER may be
 :LAST or :FIRST. THREADED can be used to run checker in a separate thread (may be useful for GUI)"
-  (let ((groups
-         (with-open-file (in filename)
-           (read-groups in))))
+  (let ((translations
+         (with-open-file (stream filename)
+           (read-dictionary stream))))
     (flet ((run% ()
              (let ((*io-stream* stream)
                    (*key-order* key-order))
-               (loop for group in (permute-groups groups) do
-                    (handler-case (check-group group)
+               (loop for translation in (permute-translations translations) do
+                    (handler-case (check-translation translation)
                       (end-of-file () (loop-finish)))
                     finally (return nil)))))
       (if threaded

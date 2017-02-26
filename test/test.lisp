@@ -10,71 +10,63 @@
 
 (in-suite dict-parsing)
 
-(defun group-as-string (group)
-  "Return a group string representation"
-  (format nil "{ ~{~a = ~a~^; ~} }"
-          (reduce (lambda (pair acc)
-                    (cons (car pair)
-                          (cons (cdr pair) acc)))
-                  group
-                  :initial-value nil
-                  :from-end t)))
+(defgeneric translation= (trans1 trans2))
+(defmethod translation= ((trans1 check-words::single-translation)
+                         (trans2 check-words::single-translation))
+  (equalp (check-words::translation trans1)
+          (check-words::translation trans2)))
 
-(defun annotated-group-as-string (group)
-  "Return an annotated group string representation"
-  (format nil "{~a; ~{~a = ~a~^; ~} }"
-          (car group)
-          (reduce (lambda (pair acc)
-                    (cons (car pair)
-                          (cons (cdr pair) acc)))
-                  (cdr group)
-                  :initial-value nil
-                  :from-end t)))
+(defmethod translation= ((trans1 check-words::translation-group)
+                         (trans2 check-words::translation-group))
+  (and
+   (equalp (check-words::translations trans1)
+           (check-words::translations trans2))
+   (string= (check-words::translation-annotation trans1)
+            (check-words::translation-annotation trans2))))
+
+(defmethod translation= ((trans1 t) (trans2 t)) nil)
 
 (test comment-parsing
   (let ((nothing
-         (with-input-from-string (stream "# This is a comment")
-           (read-groups stream))))
+         (with-input-from-string (stream "# This is a comment~%")
+           (read-dictionary stream))))
     (is (null nothing))))
 
-(test single-pair-parsing
+(test single-translation-parsing
   ;; Test UTF-8 strings
-  (let* ((expected-pair '("la quantità" . "количество"))
-         (pair
-          (with-input-from-string (stream (format nil "~a == ~a"
+  (let* ((expected-pair '("la quantità" . "-количество-"))
+         (expected-translation (make-instance 'check-words::single-translation
+                                              :translation expected-pair))
+         (translation
+          (with-input-from-string (stream (format nil "~a == ~a~%"
                                                   (car expected-pair)
                                                   (cdr expected-pair)))
-            (read-groups stream))))
-    (is (equalp expected-pair (caar pair))))
-  ;; Test non-alphanumeric characters in input
-(let* ((expected-pair '("irgendwer" . "кто-то"))
-         (pair
-          (with-input-from-string (stream (format nil "~a == ~a"
-                                                  (car expected-pair)
-                                                  (cdr expected-pair)))
-            (read-groups stream))))
-    (is (equalp expected-pair (caar pair)))))
+            (read-dictionary stream))))
+    (is (translation= (car translation)
+                      expected-translation))))
 
 (test group-parsing
-  (let* ((expected-group
-          ;; Diese Schreibweise ist veraltert aber geeignet für den Test
-          '(("das Schloß" . "a lock")
-            ("das Schloß" . "a castle")))
-         (group
-          (with-input-from-string (stream (group-as-string expected-group))
-            (read-groups stream))))
-    (is (equalp expected-group (car group)))))
+  (let* (;; Diese Schreibweise ist veraltert aber geeignet für den Test
+         (expected-translation (make-instance 'check-words::translation-group
+                                              :translations '(("das Schloß" . "a lock")
+                                                              ("das Schloß" . "a castle"))))
+         (translation
+          (with-input-from-string (stream (format nil "{ das Schloß = a lock~% das Schloß = a castle }~%"))
+            (read-dictionary stream))))
+        (is (translation= (car translation)
+                          expected-translation))))
 
 (test annotated-group-parsing
-  (let* ((expected-group
-          '("essere (presente)"
-            ("sono" . "io")
-            ("sei" . "tu")
-            ("è" . "egli")))
-         (group
-          (with-input-from-string (stream (annotated-group-as-string expected-group))
-            (read-groups stream))))
-    (is (equalp expected-group (car group)))))
+  (let* ((expected-translation (make-instance 'check-words::translation-group
+                                              :translations '(("sono" . "io")
+                                                              ("sei" . "tu")
+                                                              ("è" . "egli"))
+                                              :annotation "essere (presente)"))
+         (translation
+          (with-input-from-string (stream (format nil "{essere (presente); sono = io; sei = tu~% è = egli}~%"))
+            (read-dictionary stream))))
+    (is (translation= (car translation)
+                      expected-translation))))
 
 (in-suite group-checking)
 
@@ -102,13 +94,14 @@
        (close ,stream))))
 
 (test group-checking
-  (let ((group '(("замок" . "a lock")
-                 ("замок" . "a castle")))
-        (*key-order* :last))
-    (with-answer-stream (*io-stream* (format nil "~a~%~a~%" "замок" "замок"))
-      (is (every #'identity (check-group group)))))
-  (let ((group '(("замок" . "a lock")
-                 ("замок" . "a castle")))
-        (*key-order* :first))
-    (with-answer-stream (*io-stream* (format nil "~a~%~a~%" "a lock" "a castle"))
-      (is (every #'identity (check-group group))))))
+  (let ((group (make-instance 'check-words::translation-group
+                                              :translations '(("замок" . "a lock")
+                                                              ("замок" . "a castle")))))
+
+    (let ((*key-order* :last))
+      (with-answer-stream (*io-stream* (format nil "~a~%~a~%" "замок" "замок"))
+      (is (every #'identity (check-translation group)))))
+
+    (let ((*key-order* :first))
+      (with-answer-stream (*io-stream* (format nil "~a~%~a~%" "a lock" "a castle"))
+        (is (every #'identity (check-translation group)))))))
