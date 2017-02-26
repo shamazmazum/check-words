@@ -30,13 +30,43 @@
      (unwind-protect (progn ,@body)
        (gdk:gdk-threads-leave))))
 
+(defun show-error-window (condition)
+  (let ((dialog (make-instance 'gtk-message-dialog
+                               :message-type :error
+                               :buttons :ok
+                               :text "An error occured"
+                               :secondary-text
+                               (with-output-to-string (stream)
+                                 (princ condition stream)))))
+    (gobject:g-signal-connect dialog "response"
+                              (lambda (dialog response-id)
+                                (declare (ignore response-id))
+                                (gtk-widget-destroy dialog)))
+    (gtk-widget-show dialog)))
+
+(defun choose-dictionary ()
+  (let ((dialog (gtk-file-chooser-dialog-new "Choose dictionary"
+                                             nil :open
+                                             "gtk-cancel" :cancel
+                                             "gtk-open" :accept)))
+    (prog1
+        (if (eql (gtk-dialog-run dialog) :accept)
+            (gtk-file-chooser-get-filename dialog))
+      (gtk-widget-destroy dialog))))
+
 (defun start-checker (filename output-buffer)
   (let ((stream (make-instance 'checker-stream :output-buffer output-buffer)))
     (make-instance 'checker
                    :stream stream
-                   :thread (check-dictionary filename
-                                             :stream stream
-                                             :threaded t))))
+                   :thread
+                   (handler-bind
+                       ((esrap:esrap-parse-error
+                         (lambda (c)
+                           (show-error-window c)
+                           (invoke-restart 'continue-with-parsed))))
+                     (check-dictionary filename
+                                       :stream stream
+                                       :threaded t)))))
 
 (defun set-checker (checker)
   (if *checker*
@@ -85,16 +115,6 @@
   (with-lock-held ((stream-lock stream))
     (setf (stream-eof-pending stream) t)
     (condition-notify (stream-condvar stream))))
-
-(defun choose-dictionary ()
-  (let ((dialog (gtk-file-chooser-dialog-new "Choose dictionary"
-                                             nil :open
-                                             "gtk-cancel" :cancel
-                                             "gtk-open" :accept)))
-    (prog1
-        (if (eql (gtk-dialog-run dialog) :accept)
-            (gtk-file-chooser-get-filename dialog))
-      (gtk-widget-destroy dialog))))
 
 (defun run ()
   (within-main-loop

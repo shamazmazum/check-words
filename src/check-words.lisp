@@ -7,24 +7,11 @@
 (defvar *key-order* :last
   "Controls the key order in pair. May be :LAST or :FIRST")
 
-(define-condition check-words-parse-error (error)
-  ())
-(define-condition check-words-brace-balance (check-words-parse-error)
-  ())
+(defvar *brace-count* 0)
 
-(let ((brace-count 0))
-  (defun translate-brace (brace)
-    (cond
-      ((string= brace "{")
-       (if (> brace-count 0)
-           (error 'check-words-brace-balance))
-       (incf brace-count)
-       :group-start)
-      ((string= brace "}")
-       (if (< brace-count 1)
-           (error 'check-words-brace-balance))
-       (decf brace-count)
-       :group-end))))
+(defmacro get-and-incf (place &optional (amount 1))
+  `(prog1 ,place
+     (incf ,place ,amount)))
 
 (defun permute-translations (list)
   "Permute a list"
@@ -45,9 +32,11 @@
 (defrule pair-separator #\;)
 
 (defrule group-begin #\{
-    (:function translate-brace))
+  (:when (= (get-and-incf *brace-count*) 0))
+  (:constant :group-start))
 (defrule group-end #\}
-  (:function translate-brace))
+  (:when (= (get-and-incf *brace-count* -1) 1))
+  (:constant :group-end))
 
 (defrule comment (and #\# (* character))
   (:constant nil))
@@ -132,11 +121,13 @@
      for line = (read-line stream nil)
      while line
      do
-       (handler-case
+       (restart-case
            (let ((group (parse 'main-rule line)))
              (if group (push group groups)))
-         ((or esrap-parse-error check-words-parse-error) ()
-           (format *error-output* "Cannot parse line: ~a~%" line)))
+         (continue-with-parsed ()
+           :report "Continue with parsed translations"
+           (setq *brace-count* 0)
+           (loop-finish)))
      finally (return (collect-groups (reverse groups)))))
 
 (defun check-pair (pair)

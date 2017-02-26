@@ -6,4 +6,5 @@
            #:permute-translations
            #:*key-order*
            #:*io-stream*
-           #:*standard-io*))
+           #:*standard-io*
+           #:continue-with-parsed))
