@@ -25,16 +25,18 @@
 (defun allowed (char)
   (not (member char '(#\{ #\} #\; #\= #\#) :test #'char=)))
 
-(defrule translation-separator (+ #\=))
+(defrule spaces (* (or #\Space #\Tab)))
+
+(defrule translation-separator (and spaces (+ #\=) spaces))
 (defrule word (+ (allowed character))
   (:lambda (list)
-    (string-trim '(#\Space #\Tab) (text list))))
-(defrule pair-separator #\;)
+    (string-trim '(#\Tab #\Space) (text list))))
+(defrule pair-separator (and spaces #\; spaces))
 
-(defrule group-begin #\{
+(defrule group-begin (and #\{ spaces)
   (:when (= (get-and-incf *brace-count*) 0))
   (:constant :group-start))
-(defrule group-end #\}
+(defrule group-end (and spaces #\})
   (:when (= (get-and-incf *brace-count* -1) 1))
   (:constant :group-end))
 
@@ -49,13 +51,14 @@
 (defrule annotation (and word pair-separator)
   (:function first))
 
-(defrule translation-pairs (and single-pair (* (and pair-separator single-pair)))
-  (:destructure (first-pair rest-pairs)
+(defrule translation-pairs (and single-pair (* (and pair-separator single-pair)) (? pair-separator))
+  (:destructure (first-pair rest-pairs separator)
+                (declare (ignore separator))
                 (cons first-pair
                       (mapcar #'second rest-pairs))))
 
 (defrule main-rule (or comment (and (? (and group-begin (? annotation)))
-                                    translation-pairs (? group-end)))
+                                    (? translation-pairs) (? group-end)))
   (:lambda (list)
     (if list
         (destructuring-bind (group-marker1 pairs group-marker2) list
