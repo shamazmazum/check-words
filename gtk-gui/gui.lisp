@@ -63,7 +63,12 @@
                        ((esrap:esrap-parse-error
                          (lambda (c)
                            (show-error-window c)
-                           (invoke-restart 'continue-with-parsed))))
+                           (invoke-restart 'continue-with-parsed)))
+                        #+sbcl
+                        (sb-int:stream-decoding-error
+                         (lambda (c)
+                           (show-error-window c)
+                           (invoke-restart 'sb-int:force-end-of-file))))
                      (check-dictionary filename
                                        :stream stream
                                        :threaded t)))))
@@ -148,10 +153,11 @@
       (gobject:g-signal-connect button-next "clicked"
                                 (lambda (widget)
                                   (declare (ignore widget))
-                                  (set-input-string (checker-stream *checker*)
-                                                    (gtk-entry-buffer-text
-                                                     (gtk-entry-buffer answer-entry)))
-                                  (gtk-window-set-focus window answer-entry)))
+                                  (when *checker*
+                                    (set-input-string (checker-stream *checker*)
+                                                      (gtk-entry-buffer-text
+                                                       (gtk-entry-buffer answer-entry)))
+                                    (gtk-window-set-focus window answer-entry))))
 
       (gobject:g-signal-connect button-clear "clicked"
                                 (lambda (widget)
