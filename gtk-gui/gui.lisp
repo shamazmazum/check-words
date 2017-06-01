@@ -165,10 +165,10 @@
                                   (gtk-text-buffer-set-text
                                    (gtk-text-view-buffer log-area) "")))
 
-      (gobject:g-signal-connect scrolled-window "size-allocate"
+      (gobject:g-signal-connect log-area "size-allocate"
                                 (lambda (widget rectangle)
-                                  (declare (ignore rectangle))
-                                  (let ((adjustment (gtk-scrolled-window-vadjustment widget)))
+                                  (declare (ignore rectangle widget))
+                                  (let ((adjustment (gtk-scrolled-window-vadjustment scrolled-window)))
                                     (setf (gtk-adjustment-value adjustment)
                                           (- (gtk-adjustment-upper adjustment)
                                              (gtk-adjustment-page-size adjustment))))))
